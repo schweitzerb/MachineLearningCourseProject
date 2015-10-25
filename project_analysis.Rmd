@@ -1,0 +1,127 @@
+---
+title: "Biceps Curl Analysis"
+author: "schweitzerb"
+date: "Sunday, October 25, 2015"
+output: html_document
+---
+    
+      
+**Summary**
+Our final model for prediciting the class of the exercise movement is a random forest model with an out of sample error rate of less than 0.1%.
+    
+    
+**Reading the data**  
+```{r warning=FALSE, message=FALSE}
+##Load libraries for the analysis
+library(ggplot2)
+library(caret)
+library(doParallel)
+
+##Speed up calculations
+cl <- makeCluster(detectCores()-1)
+registerDoParallel(cl)
+
+##Read the Data, downloaded from the course website
+pml_raw <- read.csv("pml-training.csv",header=TRUE)
+```
+    
+    
+**Data Preparation**  
+A quick look at the data with *View(pml_raw)* (not included for space reasons) shows us that there are 3 noteworthy things about the data:
+- There are a lot of almost completely empty columns
+- There are a lot of almost completely NA columns
+- There are only relatively few rows with new_window=="yes"
+
+We also know from the source of the data (http://groupware.les.inf.puc-rio.br/har) that the author used sliding time windows in their analysis. However we will ignore these for this project. We'll proceed to clean the data by removing the new_window rows, as well as the useless empty and NA columns.  
+
+```{r}
+##remove new window rows
+pml_clean <- pml_raw[!pml_raw$new_window=="yes",]
+pml_clean <- pml_clean[,!(names(pml_clean)=="new_window")]
+
+##remove empty columns
+emptyCols <- sapply(pml_clean,function(x)all(x==""))
+emptyCols[is.na(emptyCols)]<-FALSE
+pml_clean <- pml_clean[,!emptyCols]
+
+##remove NA columns
+naCols <- sapply(pml_clean,function(x)all(is.na(x)))
+pml_clean <- pml_clean[,!naCols]
+
+##consolidate the timestamps
+pml_clean$t <- as.numeric(paste0(pml_clean$raw_timestamp_part_1, formatC(pml_clean$raw_timestamp_part_2,width=6, flag="0")))
+pml_clean <- pml_clean[,-c(1,3:5)]
+
+```
+
+Finally, we split our data into a training and test set in order to be able to cross validate our model later and estimate the out of sample error rate.
+
+```{r cache=TRUE, warning=FALSE}
+##Create training and test sets
+set.seed(1136) ##for reproducibility
+split <- createDataPartition(y=pml_clean$classe,p=0.8,list=F)
+pml_train <- pml_clean[split,]
+pml_test <- pml_clean[-split,]
+
+```
+  
+    
+**Model Building**  
+Since we're trying to predict the type of type of biceps curl executed by the subject, we know that the problem is a classification problem and tree-based model will likely provide the best results and we'll choose a random forest model for the purpose of this analysis.
+
+We also know from the original source that some of the columns in the data set are the raw data from the sensors (the x,y,x columns) while the roll, pitch, yaw and total columns aggregate the this raw data. At this point we're not sure whether the aggregated data compresses the information too much and hence reduces the predictive power or whether it reduces noise and helps predictive power, so we'll proceed by building a model on the raw data and a model on the aggregated data and compare the results.
+
+```{r cache=TRUE, warning=FALSE}
+##Split data by raw vs. aggregate data
+pml_train_XYZ <- pml_train[,c(1,2,55,56,grep("[xyz]$",names(pml_train)))]
+pml_train_RPY <- pml_train[,c(1,2,55,grep("^[rpyt]",names(pml_train)))]
+
+##Build two models
+pml_RFmod_XYZ <- train(classe~.,pml_train_XYZ,method="rf")
+pml_RFmod_RPY <- train(classe~.,pml_train_RPY,method="rf")
+
+##Compare accuracy
+pml_RFmod_XYZ$results[2,2]
+pml_RFmod_RPY$results[2,2] 
+```
+
+Since the model based on the raw data is less accuracte, we'll continue our analysis based on the calculated roll pitch and yaw. Next, to ensure that we picked the correct model type, we'll compare our random forest model to a GBM model.  
+
+
+```{r cache=TRUE, warning=FALSE}
+##Build GBM model
+pml_GBMmod_RPY <- train(classe~.,pml_train_RPY,method="gbm")
+
+##Compare accuracy
+pml_RFmod_RPY$results[2,2]
+pml_GBMmod_RPY$results$Accuracy[9]
+```
+
+Both models perform extremely well, however the random forest model still has a slight edge. Nevertheless, we'll cross validate the performance of both models on our test data to see if the results translate to a completely new set of data.
+  
+    
+**Out of Sample Error**  
+```{r}
+##Build Predictions
+RFpreds <- predict(pml_RFmod_RPY,pml_test)
+GBMpreds <- predict(pml_GBMmod_RPY,pml_test)
+
+##Create the Confusion Matrices
+GBMerror <- confusionMatrix(GBMpreds,pml_test$classe)
+RFerror <- confusionMatrix(RFpreds,pml_test$classe)
+
+GBMerror
+RFerror
+
+##quit multi-core
+stopCluster(cl)
+```
+
+As we can see from the confusion matrix for each model, our initial results held, and our random forest model outperforms the gbm model with an out of sample error rate of `r 1-RFerror$overall[1]` versus `r 1-GBMerror$overall[1]`.
+    
+    
+**Conclusion**  
+Based on this analysis, we chose our random forest model based on the roll pitch and yaw data as the most promising model to predict the class of the movement executed by the exerciser.
+  
+  
+  
