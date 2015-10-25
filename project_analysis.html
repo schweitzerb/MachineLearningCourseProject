@@ -56,6 +56,11 @@ img {
   max-width:100%; 
   height: auto; 
 }
+
+strong {
+ line-height: 300%;
+ color: red;
+}
 </style>
 <div class="container-fluid main-container">
 
@@ -252,7 +257,7 @@ GBMerror</code></pre>
 <pre class="r"><code>##quit multi-core
 stopCluster(cl)</code></pre>
 <p>As we can see from the confusion matrix for each model, our initial results held, and our random forest model outperforms the gbm model with an out of sample error rate of 7.81046610^{-4} versus 0.0020828.</p>
-<p><strong>Conclusion</strong><br />Based on this analysis, we chose our random forest model based on the roll pitch and yaw data as the most promising model to predict the class of the movement executed by the exerciser.</p>
+<p><strong>Conclusion</strong><br />Based on this analysis, we chose our random forest model based on the roll pitch and yaw data as the most promising model to predict the class of the movement executed by the exerciser.</p></br></br></br>
 
 
 </div>
